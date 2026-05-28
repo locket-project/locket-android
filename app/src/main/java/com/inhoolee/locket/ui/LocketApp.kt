@@ -14,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun LocketApp(viewModel: LocketViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val editorDraft = state.editorDraft
     Surface(modifier = Modifier.fillMaxSize()) {
         when {
             !state.isConfigured -> CenterMessage(state.errorMessage ?: "Supabase is not configured.")
@@ -23,8 +24,8 @@ fun LocketApp(viewModel: LocketViewModel) {
                 errorMessage = state.errorMessage,
                 onSignIn = viewModel::signIn
             )
-            state.editorDraft != null -> NoteEditorScreen(
-                draft = state.editorDraft,
+            editorDraft != null -> NoteEditorScreen(
+                draft = editorDraft,
                 isLoading = state.isLoading,
                 onDraftChange = viewModel::updateDraft,
                 onClose = viewModel::closeEditor,
