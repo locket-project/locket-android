@@ -11,8 +11,8 @@ import com.inhoolee.locket.data.NotesRepository
 import com.inhoolee.locket.data.SessionStore
 import com.inhoolee.locket.data.SupabaseConfig
 import com.inhoolee.locket.data.SupabaseHttpClient
+import com.inhoolee.locket.data.ThemePreferenceStore
 import com.inhoolee.locket.ui.LocketApp
-import com.inhoolee.locket.ui.LocketTheme
 import com.inhoolee.locket.ui.LocketViewModel
 
 class MainActivity : ComponentActivity() {
@@ -25,13 +25,12 @@ class MainActivity : ComponentActivity() {
         val client = SupabaseHttpClient(config)
         val authRepository = AuthRepository(client, SessionStore(applicationContext))
         val notesRepository = NotesRepository(client, authRepository)
-        val factory = LocketViewModelFactory(config, authRepository, notesRepository)
+        val themePreferenceStore = ThemePreferenceStore(applicationContext)
+        val factory = LocketViewModelFactory(config, authRepository, notesRepository, themePreferenceStore)
 
         setContent {
-            LocketTheme {
-                val viewModel: LocketViewModel = viewModel(factory = factory)
-                LocketApp(viewModel = viewModel)
-            }
+            val viewModel: LocketViewModel = viewModel(factory = factory)
+            LocketApp(viewModel = viewModel)
         }
     }
 }
@@ -39,10 +38,11 @@ class MainActivity : ComponentActivity() {
 private class LocketViewModelFactory(
     private val config: SupabaseConfig,
     private val authRepository: AuthRepository,
-    private val notesRepository: NotesRepository
+    private val notesRepository: NotesRepository,
+    private val themePreferenceStore: ThemePreferenceStore
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return LocketViewModel(config, authRepository, notesRepository) as T
+        return LocketViewModel(config, authRepository, notesRepository, themePreferenceStore) as T
     }
 }

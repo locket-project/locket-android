@@ -30,14 +30,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.inhoolee.locket.domain.NoteColor
 import com.inhoolee.locket.domain.NoteKind
+import com.inhoolee.locket.domain.ThemeMode
 
 @Composable
 fun NoteEditorScreen(
+    themeMode: ThemeMode,
     draft: EditorDraft,
     isLoading: Boolean,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onDraftChange: (EditorDraft) -> Unit,
     onClose: () -> Unit,
     onSave: () -> Unit
@@ -53,6 +57,10 @@ fun NoteEditorScreen(
                 text = if (draft.noteId == null) "New note" else "Edit note",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.headlineSmall
+            )
+            ThemeModeSelector(
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange
             )
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Close")
@@ -129,20 +137,23 @@ private fun KindButton(text: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun ColorPicker(selected: NoteColor, onSelect: (NoteColor) -> Unit) {
+    val isDarkTheme = isLocketDarkTheme()
+
     Column {
         Text("Color", style = MaterialTheme.typography.labelLarge)
         Spacer(modifier = Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NoteColor.entries.forEach { color ->
                 val borderText = if (selected == color) "x" else ""
+                val swatch = color.swatch(isDarkTheme)
                 OutlinedButton(onClick = { onSelect(color) }) {
                     Box(
                         modifier = Modifier
                             .size(18.dp)
-                            .background(color.swatch(), CircleShape),
+                            .background(swatch, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(borderText, color = Color.Black)
+                        Text(borderText, color = swatch.contentColor())
                     }
                 }
             }
@@ -188,11 +199,26 @@ private fun ChecklistEditor(
 private fun List<ChecklistEditorItem>.replaceAt(index: Int, item: ChecklistEditorItem): List<ChecklistEditorItem> =
     mapIndexed { currentIndex, current -> if (currentIndex == index) item else current }
 
-private fun NoteColor.swatch(): Color = when (this) {
-    NoteColor.Default -> Color(0xFFEDE4D8)
-    NoteColor.Yellow -> Color(0xFFFFD54F)
-    NoteColor.Green -> Color(0xFF85D89C)
-    NoteColor.Blue -> Color(0xFF8AB8F5)
-    NoteColor.Red -> Color(0xFFF48A98)
-    NoteColor.Gray -> Color(0xFF7B8088)
-}
+private fun NoteColor.swatch(isDarkTheme: Boolean): Color =
+    if (isDarkTheme) {
+        when (this) {
+            NoteColor.Default -> Color(0xFFBDAF9D)
+            NoteColor.Yellow -> Color(0xFFFFD54F)
+            NoteColor.Green -> Color(0xFF85D89C)
+            NoteColor.Blue -> Color(0xFF8AB8F5)
+            NoteColor.Red -> Color(0xFFF48A98)
+            NoteColor.Gray -> Color(0xFFAEB4BD)
+        }
+    } else {
+        when (this) {
+            NoteColor.Default -> Color(0xFFEDE4D8)
+            NoteColor.Yellow -> Color(0xFFFFD54F)
+            NoteColor.Green -> Color(0xFF85D89C)
+            NoteColor.Blue -> Color(0xFF8AB8F5)
+            NoteColor.Red -> Color(0xFFF48A98)
+            NoteColor.Gray -> Color(0xFF7B8088)
+        }
+    }
+
+private fun Color.contentColor(): Color =
+    if (luminance() > 0.5f) Color.Black else Color.White

@@ -18,26 +18,38 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,11 +57,14 @@ import androidx.compose.ui.unit.dp
 import com.inhoolee.locket.domain.LocketNote
 import com.inhoolee.locket.domain.NoteColor
 import com.inhoolee.locket.domain.NoteKind
+import com.inhoolee.locket.domain.ThemeMode
 import com.inhoolee.locket.domain.Workspace
 
 @Composable
 fun NotesScreen(
+    themeMode: ThemeMode,
     state: LocketUiState,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onRefresh: () -> Unit,
     onSearchChange: (String) -> Unit,
     onWorkspaceChange: (Workspace) -> Unit,
@@ -60,14 +75,25 @@ fun NotesScreen(
     onToggleArchive: (LocketNote) -> Unit,
     onSignOut: () -> Unit
 ) {
+    var isSearchOpen by rememberSaveable { mutableStateOf(state.searchText.isNotEmpty()) }
+    var isWorkspaceMenuOpen by rememberSaveable { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val workspaceTitle = if (state.workspace == Workspace.Archive) "Archive" else "Notes"
+
+    LaunchedEffect(isSearchOpen) {
+        if (isSearchOpen) {
+            searchFocusRequester.requestFocus()
+        }
+    }
+
     Scaffold(
         floatingActionButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FloatingActionButton(onClick = { onNewNote(NoteKind.Checklist) }) {
-                    Text("[]")
+                    Icon(Icons.Default.CheckBox, contentDescription = "New checklist")
                 }
                 FloatingActionButton(onClick = { onNewNote(NoteKind.Text) }) {
-                    Icon(Icons.Default.Add, contentDescription = "New note")
+                    Icon(Icons.Default.Edit, contentDescription = "New note")
                 }
             }
         }
@@ -83,38 +109,80 @@ fun NotesScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Locket", style = MaterialTheme.typography.headlineMedium)
+                    Text(workspaceTitle, style = MaterialTheme.typography.headlineMedium)
                     Text(state.userEmail, style = MaterialTheme.typography.bodySmall)
+                }
+                ThemeModeSelector(
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange
+                )
+                IconButton(onClick = { isSearchOpen = true }) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
                 }
                 IconButton(onClick = onRefresh) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                }
+                Box {
+                    IconButton(onClick = { isWorkspaceMenuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(
+                        expanded = isWorkspaceMenuOpen,
+                        onDismissRequest = { isWorkspaceMenuOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Notes") },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            onClick = {
+                                isWorkspaceMenuOpen = false
+                                onWorkspaceChange(Workspace.Notes)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Archive") },
+                            leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                            onClick = {
+                                isWorkspaceMenuOpen = false
+                                onWorkspaceChange(Workspace.Archive)
+                            }
+                        )
+                    }
                 }
                 IconButton(onClick = onSignOut) {
                     Icon(Icons.Default.Logout, contentDescription = "Sign out")
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = state.searchText,
-                onValueChange = onSearchChange,
-                label = { Text("Search") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                WorkspaceButton("Notes", state.workspace == Workspace.Notes) {
-                    onWorkspaceChange(Workspace.Notes)
-                }
-                WorkspaceButton("Archive", state.workspace == Workspace.Archive) {
-                    onWorkspaceChange(Workspace.Archive)
-                }
+            if (isSearchOpen) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = state.searchText,
+                    onValueChange = onSearchChange,
+                    placeholder = { Text("Search notes") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                if (state.searchText.isNotEmpty()) {
+                                    onSearchChange("")
+                                } else {
+                                    isSearchOpen = false
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close search")
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(searchFocusRequester)
+                )
             }
             if (state.errorMessage != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(state.errorMessage, color = MaterialTheme.colorScheme.error)
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             if (state.notes.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No notes")
@@ -141,15 +209,6 @@ fun NotesScreen(
 }
 
 @Composable
-private fun WorkspaceButton(text: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(text) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(text) }
-    }
-}
-
-@Composable
 private fun NoteCard(
     note: LocketNote,
     onClick: () -> Unit,
@@ -157,19 +216,24 @@ private fun NoteCard(
     onTogglePin: () -> Unit,
     onToggleArchive: () -> Unit
 ) {
+    val isDarkTheme = isLocketDarkTheme()
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = note.color.containerColor())
+        colors = CardDefaults.cardColors(
+            containerColor = note.color.containerColor(isDarkTheme),
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .background(note.color.dotColor(), CircleShape)
+                        .background(note.color.dotColor(isDarkTheme), CircleShape)
                 )
                 Text(
                     text = note.displayTitle,
@@ -215,20 +279,44 @@ private fun NoteCard(
     }
 }
 
-private fun NoteColor.containerColor(): Color = when (this) {
-    NoteColor.Default -> Color(0xFFFFFCF7)
-    NoteColor.Yellow -> Color(0xFFFFF2A8)
-    NoteColor.Green -> Color(0xFFD8F2DF)
-    NoteColor.Blue -> Color(0xFFDCEBFF)
-    NoteColor.Red -> Color(0xFFFFDDE1)
-    NoteColor.Gray -> Color(0xFFE2E3E6)
-}
+private fun NoteColor.containerColor(isDarkTheme: Boolean): Color =
+    if (isDarkTheme) {
+        when (this) {
+            NoteColor.Default -> Color(0xFF2A251F)
+            NoteColor.Yellow -> Color(0xFF4A3D16)
+            NoteColor.Green -> Color(0xFF1F3F2B)
+            NoteColor.Blue -> Color(0xFF1F344D)
+            NoteColor.Red -> Color(0xFF4A252C)
+            NoteColor.Gray -> Color(0xFF30343A)
+        }
+    } else {
+        when (this) {
+            NoteColor.Default -> Color(0xFFFFFCF7)
+            NoteColor.Yellow -> Color(0xFFFFF2A8)
+            NoteColor.Green -> Color(0xFFD8F2DF)
+            NoteColor.Blue -> Color(0xFFDCEBFF)
+            NoteColor.Red -> Color(0xFFFFDDE1)
+            NoteColor.Gray -> Color(0xFFE2E3E6)
+        }
+    }
 
-private fun NoteColor.dotColor(): Color = when (this) {
-    NoteColor.Default -> Color(0xFF837464)
-    NoteColor.Yellow -> Color(0xFFB08A00)
-    NoteColor.Green -> Color(0xFF2F7D4E)
-    NoteColor.Blue -> Color(0xFF286AAD)
-    NoteColor.Red -> Color(0xFFC84B5C)
-    NoteColor.Gray -> Color(0xFF555960)
-}
+private fun NoteColor.dotColor(isDarkTheme: Boolean): Color =
+    if (isDarkTheme) {
+        when (this) {
+            NoteColor.Default -> Color(0xFFBDAF9D)
+            NoteColor.Yellow -> Color(0xFFFFD54F)
+            NoteColor.Green -> Color(0xFF85D89C)
+            NoteColor.Blue -> Color(0xFF8AB8F5)
+            NoteColor.Red -> Color(0xFFF48A98)
+            NoteColor.Gray -> Color(0xFFAEB4BD)
+        }
+    } else {
+        when (this) {
+            NoteColor.Default -> Color(0xFF837464)
+            NoteColor.Yellow -> Color(0xFFB08A00)
+            NoteColor.Green -> Color(0xFF2F7D4E)
+            NoteColor.Blue -> Color(0xFF286AAD)
+            NoteColor.Red -> Color(0xFFC84B5C)
+            NoteColor.Gray -> Color(0xFF555960)
+        }
+    }

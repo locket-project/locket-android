@@ -6,7 +6,8 @@ import com.inhoolee.locket.domain.LocketNote
 import com.inhoolee.locket.domain.NoteKind
 import com.inhoolee.locket.domain.NoteLabel
 import com.inhoolee.locket.domain.Workspace
-import java.util.UUID
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 class NotesRepository(
     private val client: SupabaseHttpClient,
@@ -18,6 +19,7 @@ class NotesRepository(
     private val noteLabelRowsType = object : TypeToken<List<NoteLabelJoinRow>>() {}.type
     private val resolvedLabelRowsType = object : TypeToken<List<ResolvedLabelRow>>() {}.type
     private val sortRowsType = object : TypeToken<List<SortOrderRow>>() {}.type
+    private val noteSelect = "id,user_id,title,body,reminder_at,type,color,is_pinned,is_archived,sort_order,created_at,updated_at"
 
     suspend fun listNotes(workspace: Workspace, searchText: String): List<LocketNote> {
         val session = authRepository.validSession()
@@ -29,36 +31,10 @@ class NotesRepository(
             type = noteRowsType
         )
         if (noteRows.isEmpty()) return emptyList()
-
-        val noteIds = noteRows.mapNotNull { it.id }
-        val checklistRows = fetchRows<ChecklistItemRow>(
-            table = "note_checklist_items",
-            select = "id,note_id,content,is_checked,indent_level,sort_order,checked_at,created_at",
-            noteIds = noteIds,
-            accessToken = session.accessToken,
-            ordered = true,
-            type = checklistRowsType
-        )
-        val joinRows = fetchRows<NoteLabelJoinRow>(
-            table = "note_labels",
-            select = "note_id,label_id",
-            noteIds = noteIds,
-            accessToken = session.accessToken,
-            ordered = false,
-            type = noteLabelRowsType
-        )
-        val labelsById = labelsById(joinRows.mapNotNull { it.label_id }, session.accessToken)
-        val checklistByNote = checklistRows.map { it.toChecklistItem() }.groupBy { it.noteId }
-        val labelsByNote = joinRows.groupBy { it.note_id.orEmpty() }
+        val notes = hydrateNotes(noteRows, session.accessToken)
 
         val queryText = searchText.trim()
-        return noteRows.map { row ->
-            val noteId = row.id.orEmpty()
-            row.toNote(
-                checklistItems = checklistByNote[noteId].orEmpty(),
-                labels = labelsByNote[noteId].orEmpty().mapNotNull { labelsById[it.label_id] }
-            )
-        }.filter { note ->
+        return notes.filter { note ->
             queryText.isEmpty() ||
                 note.title.contains(queryText, ignoreCase = true) ||
                 note.body.contains(queryText, ignoreCase = true) ||
@@ -118,48 +94,73 @@ class NotesRepository(
 
     private suspend fun createNote(draft: NoteDraftPayload): LocketNote {
         val session = authRepository.validSession()
-        val id = UUID.randomUUID().toString()
-        client.postgrestRequest<List<NoteRow>>(
+        val insertedRows = client.postgrestRequest<List<NoteRow>>(
             table = "notes",
             method = "POST",
             accessToken = session.accessToken,
-            body = noteInsertPayload(id, session.userId, draft),
+            body = noteInsertPayload(session.userId, draft),
             type = noteRowsType
         )
-        syncLabels(session.userId, id, draft.labelNames, session.accessToken)
-        if (draft.kind == NoteKind.Checklist) {
-            replaceChecklistItems(session.userId, id, draft.checklistItems, session.accessToken)
+        val insertedRow = insertedRows.firstOrNull()
+            ?: throw IllegalStateException("Supabase returned no note after insert.")
+        val id = insertedRow.id
+            ?: throw IllegalStateException("Supabase returned no note id after insert.")
+        syncNoteDetails(
+            userId = session.userId,
+            noteId = id,
+            draft = draft,
+            accessToken = session.accessToken,
+            deleteExistingChecklist = false,
+            deleteExistingLabels = false
+        )
+        return if (canUseNoteRowOnly(draft)) {
+            insertedRow.toNote()
+        } else {
+            fetchNote(id, session.userId, session.accessToken)
         }
-        return fetchNote(id)
     }
 
     private suspend fun updateNote(noteId: String, draft: NoteDraftPayload): LocketNote {
         val session = authRepository.validSession()
-        client.postgrestVoid(
+        val updatedRows = client.postgrestRequest<List<NoteRow>>(
             table = "notes",
             query = noteQuery(noteId, session.userId),
             method = "PATCH",
             accessToken = session.accessToken,
-            body = notePatchPayload(draft)
+            body = notePatchPayload(draft),
+            type = noteRowsType
         )
-        if (draft.kind == NoteKind.Text) {
-            deleteChecklistItems(session.userId, noteId, session.accessToken)
+        val updatedRow = updatedRows.firstOrNull()
+            ?: throw IllegalStateException("Remote note was not found while updating.")
+        syncNoteDetails(
+            userId = session.userId,
+            noteId = noteId,
+            draft = draft,
+            accessToken = session.accessToken,
+            deleteExistingChecklist = true,
+            deleteExistingLabels = true
+        )
+        return if (canUseNoteRowOnly(draft)) {
+            updatedRow.toNote()
         } else {
-            replaceChecklistItems(session.userId, noteId, draft.checklistItems, session.accessToken)
+            fetchNote(noteId, session.userId, session.accessToken)
         }
-        syncLabels(session.userId, noteId, draft.labelNames, session.accessToken)
-        return fetchNote(noteId)
     }
 
-    private suspend fun fetchNote(noteId: String): LocketNote {
-        val notes = listNotes(Workspace.Notes, "") + listNotes(Workspace.Archive, "")
-        return notes.firstOrNull { it.id == noteId }
+    private suspend fun fetchNote(noteId: String, userId: String, accessToken: String): LocketNote {
+        val noteRows: List<NoteRow> = client.postgrestRequest(
+            table = "notes",
+            query = noteQuery(noteId, userId) + ("select" to noteSelect),
+            accessToken = accessToken,
+            type = noteRowsType
+        )
+        return hydrateNotes(noteRows, accessToken).firstOrNull()
             ?: throw IllegalStateException("Remote note was not found after syncing.")
     }
 
     private fun buildListQuery(userId: String, workspace: Workspace): List<Pair<String, String>> {
         val query = mutableListOf(
-            "select" to "id,user_id,title,body,reminder_at,type,color,is_pinned,is_archived,sort_order,created_at,updated_at",
+            "select" to noteSelect,
             "user_id" to "eq.${userId.lowercase()}",
             "order" to "is_pinned.desc",
             "order" to "sort_order.asc",
@@ -170,6 +171,47 @@ class NotesRepository(
             Workspace.Archive -> query += "is_archived" to "eq.true"
         }
         return query
+    }
+
+    private suspend fun hydrateNotes(noteRows: List<NoteRow>, accessToken: String): List<LocketNote> = coroutineScope {
+        val noteIds = noteRows.mapNotNull { it.id }
+        if (noteRows.isEmpty() || noteIds.isEmpty()) {
+            noteRows.map { it.toNote() }
+        } else {
+            val checklistRowsDeferred = async {
+                fetchRows<ChecklistItemRow>(
+                    table = "note_checklist_items",
+                    select = "id,note_id,content,is_checked,indent_level,sort_order,checked_at,created_at",
+                    noteIds = noteIds,
+                    accessToken = accessToken,
+                    ordered = true,
+                    type = checklistRowsType
+                )
+            }
+            val joinRowsDeferred = async {
+                fetchRows<NoteLabelJoinRow>(
+                    table = "note_labels",
+                    select = "note_id,label_id",
+                    noteIds = noteIds,
+                    accessToken = accessToken,
+                    ordered = false,
+                    type = noteLabelRowsType
+                )
+            }
+            val checklistRows = checklistRowsDeferred.await()
+            val joinRows = joinRowsDeferred.await()
+            val labelsById = labelsById(joinRows.mapNotNull { it.label_id }, accessToken)
+            val checklistByNote = checklistRows.map { it.toChecklistItem() }.groupBy { it.noteId }
+            val labelsByNote = joinRows.groupBy { it.note_id.orEmpty() }
+
+            noteRows.map { row ->
+                val noteId = row.id.orEmpty()
+                row.toNote(
+                    checklistItems = checklistByNote[noteId].orEmpty(),
+                    labels = labelsByNote[noteId].orEmpty().mapNotNull { labelsById[it.label_id] }
+                )
+            }
+        }
     }
 
     private suspend fun <T> fetchRows(
@@ -212,14 +254,56 @@ class NotesRepository(
         return rows.associate { it.id to it.toLabel() }
     }
 
-    private suspend fun syncLabels(userId: String, noteId: String, labelNames: List<String>, accessToken: String) {
-        client.postgrestVoid(
-            table = "note_labels",
-            query = listOf("user_id" to "eq.$userId", "note_id" to "eq.$noteId"),
-            method = "DELETE",
-            accessToken = accessToken
-        )
-        val normalized = normalizedLabelNames(labelNames)
+    private suspend fun syncNoteDetails(
+        userId: String,
+        noteId: String,
+        draft: NoteDraftPayload,
+        accessToken: String,
+        deleteExistingChecklist: Boolean,
+        deleteExistingLabels: Boolean
+    ) = coroutineScope {
+        val labelNames = normalizedLabelNames(draft.labelNames)
+        val labelsDeferred = if (deleteExistingLabels || labelNames.isNotEmpty()) {
+            async { syncLabels(userId, noteId, labelNames, accessToken, deleteExistingLabels) }
+        } else {
+            null
+        }
+        val checklistDeferred = when {
+            draft.kind == NoteKind.Text && deleteExistingChecklist -> async {
+                deleteChecklistItems(userId, noteId, accessToken)
+            }
+            draft.kind == NoteKind.Checklist -> async {
+                replaceChecklistItems(
+                    userId = userId,
+                    noteId = noteId,
+                    items = draft.checklistItems,
+                    accessToken = accessToken,
+                    deleteExisting = deleteExistingChecklist,
+                    touchAfter = deleteExistingChecklist
+                )
+            }
+            else -> null
+        }
+
+        labelsDeferred?.await()
+        checklistDeferred?.await()
+    }
+
+    private suspend fun syncLabels(
+        userId: String,
+        noteId: String,
+        normalized: List<String>,
+        accessToken: String,
+        deleteExisting: Boolean
+    ) {
+        if (deleteExisting) {
+            client.postgrestVoid(
+                table = "note_labels",
+                query = listOf("user_id" to "eq.$userId", "note_id" to "eq.$noteId"),
+                method = "DELETE",
+                accessToken = accessToken
+            )
+        }
         if (normalized.isEmpty()) return
 
         val keys = normalized.map { it.lowercase() }
@@ -279,15 +363,18 @@ class NotesRepository(
         userId: String,
         noteId: String,
         items: List<ChecklistDraftPayload>,
-        accessToken: String
+        accessToken: String,
+        deleteExisting: Boolean = true,
+        touchAfter: Boolean = true
     ) {
-        deleteChecklistItems(userId, noteId, accessToken)
+        if (deleteExisting) {
+            deleteChecklistItems(userId, noteId, accessToken)
+        }
         val rows = items
             .map { it.copy(content = it.content.trim()) }
             .filter { it.content.isNotEmpty() }
             .mapIndexed { index, item ->
                 checklistInsertPayload(
-                    id = item.id.ifBlank { UUID.randomUUID().toString() },
                     noteId = noteId,
                     userId = userId,
                     item = item,
@@ -303,7 +390,9 @@ class NotesRepository(
                 prefer = "return=minimal"
             )
         }
-        touchNote(userId, noteId, accessToken)
+        if (touchAfter) {
+            touchNote(userId, noteId, accessToken)
+        }
     }
 
     private suspend fun deleteChecklistItems(userId: String, noteId: String, accessToken: String) {
@@ -315,7 +404,7 @@ class NotesRepository(
         )
     }
 
-    private suspend fun nextPinnedSortOrder(userId: String, accessToken: String): Int {
+    private suspend fun nextPinnedSortOrder(userId: String, accessToken: String): Long {
         val rows: List<SortOrderRow> = client.postgrestRequest(
             table = "notes",
             query = listOf(
@@ -329,7 +418,7 @@ class NotesRepository(
             accessToken = accessToken,
             type = sortRowsType
         )
-        return ((rows.firstOrNull()?.sort_order ?: -1.0) + 1).toInt()
+        return ((rows.firstOrNull()?.sort_order ?: -1.0) + 1).toLong()
     }
 
     private suspend fun touchNote(userId: String, noteId: String, accessToken: String) {
@@ -341,6 +430,9 @@ class NotesRepository(
             body = mapOf("updated_at" to isoNow())
         )
     }
+
+    private fun canUseNoteRowOnly(draft: NoteDraftPayload): Boolean =
+        draft.kind == NoteKind.Text && normalizedLabelNames(draft.labelNames).isEmpty()
 
     private fun noteQuery(noteId: String, userId: String): List<Pair<String, String>> =
         listOf("user_id" to "eq.$userId", "id" to "eq.$noteId")

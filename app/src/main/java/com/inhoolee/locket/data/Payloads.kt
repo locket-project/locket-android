@@ -29,13 +29,11 @@ fun normalizedLabelNames(names: List<String>): List<String> {
 }
 
 fun noteInsertPayload(
-    id: String,
     userId: String,
     draft: NoteDraftPayload,
     isPinned: Boolean = false,
-    sortOrder: Double = -(System.currentTimeMillis().toDouble())
+    sortOrder: Long = -System.currentTimeMillis()
 ): Map<String, Any?> = mapOf(
-    "id" to id,
     "user_id" to userId,
     "title" to draft.title,
     "body" to draft.body,
@@ -54,13 +52,11 @@ fun notePatchPayload(draft: NoteDraftPayload): Map<String, Any?> = mapOf(
 )
 
 fun checklistInsertPayload(
-    id: String,
     noteId: String,
     userId: String,
     item: ChecklistDraftPayload,
     sortOrder: Int
 ): Map<String, Any?> = mapOf(
-    "id" to id,
     "note_id" to noteId,
     "user_id" to userId,
     "content" to item.content,

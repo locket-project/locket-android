@@ -17,6 +17,17 @@ enum class Workspace {
     Archive
 }
 
+enum class ThemeMode(val wireValue: String) {
+    System("system"),
+    Light("light"),
+    Dark("dark");
+
+    companion object {
+        fun fromWire(value: String?): ThemeMode =
+            entries.firstOrNull { it.wireValue == value } ?: System
+    }
+}
+
 enum class NoteColor(val wireValue: String) {
     Default("default"),
     Yellow("yellow"),

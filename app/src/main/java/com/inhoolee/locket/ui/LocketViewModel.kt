@@ -7,10 +7,12 @@ import com.inhoolee.locket.data.ChecklistDraftPayload
 import com.inhoolee.locket.data.NoteDraftPayload
 import com.inhoolee.locket.data.NotesRepository
 import com.inhoolee.locket.data.SupabaseConfig
+import com.inhoolee.locket.data.ThemePreferenceStore
 import com.inhoolee.locket.data.toDraftPayload
 import com.inhoolee.locket.domain.LocketNote
 import com.inhoolee.locket.domain.NoteColor
 import com.inhoolee.locket.domain.NoteKind
+import com.inhoolee.locket.domain.ThemeMode
 import com.inhoolee.locket.domain.Workspace
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +30,8 @@ data class LocketUiState(
     val searchText: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val editorDraft: EditorDraft? = null
+    val editorDraft: EditorDraft? = null,
+    val themeMode: ThemeMode = ThemeMode.System
 )
 
 data class EditorDraft(
@@ -66,7 +69,8 @@ data class ChecklistEditorItem(
 class LocketViewModel(
     private val config: SupabaseConfig,
     private val authRepository: AuthRepository,
-    private val notesRepository: NotesRepository
+    private val notesRepository: NotesRepository,
+    private val themePreferenceStore: ThemePreferenceStore
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         LocketUiState(
@@ -78,6 +82,7 @@ class LocketViewModel(
     val uiState: StateFlow<LocketUiState> = _uiState
 
     init {
+        observeThemeMode()
         if (config.isConfigured) {
             restoreSession()
         }
@@ -103,8 +108,24 @@ class LocketViewModel(
     fun signOut() {
         viewModelScope.launch {
             authRepository.signOut()
+            val themeMode = _uiState.value.themeMode
             _uiState.update {
-                LocketUiState(isConfigured = config.isConfigured, isCheckingSession = false)
+                LocketUiState(
+                    isConfigured = config.isConfigured,
+                    isCheckingSession = false,
+                    themeMode = themeMode
+                )
+            }
+        }
+    }
+
+    fun setThemeMode(themeMode: ThemeMode) {
+        _uiState.update { it.copy(themeMode = themeMode) }
+        viewModelScope.launch {
+            runCatching {
+                themePreferenceStore.saveThemeMode(themeMode)
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.message) }
             }
         }
     }
@@ -171,9 +192,14 @@ class LocketViewModel(
         val draft = _uiState.value.editorDraft ?: return
         viewModelScope.launch {
             runLoading {
-                notesRepository.saveNote(draft.noteId, draft.toPayload())
-                _uiState.update { it.copy(editorDraft = null, errorMessage = null) }
-                loadNotes()
+                val savedNote = notesRepository.saveNote(draft.noteId, draft.toPayload())
+                _uiState.update {
+                    it.copy(
+                        notes = it.notes.withSavedNote(savedNote, it.workspace, it.searchText),
+                        editorDraft = null,
+                        errorMessage = null
+                    )
+                }
             }
         }
     }
@@ -233,6 +259,14 @@ class LocketViewModel(
         }
     }
 
+    private fun observeThemeMode() {
+        viewModelScope.launch {
+            themePreferenceStore.themeMode.collect { themeMode ->
+                _uiState.update { it.copy(themeMode = themeMode) }
+            }
+        }
+    }
+
     private suspend fun runLoading(block: suspend () -> Unit) {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         runCatching { block() }
@@ -244,5 +278,34 @@ class LocketViewModel(
         val state = _uiState.value
         val notes = notesRepository.listNotes(state.workspace, state.searchText)
         _uiState.update { it.copy(notes = notes, errorMessage = null) }
+    }
+
+    private fun List<LocketNote>.withSavedNote(
+        savedNote: LocketNote,
+        workspace: Workspace,
+        searchText: String
+    ): List<LocketNote> {
+        val withoutSaved = filterNot { it.id == savedNote.id }
+        val nextNotes = if (savedNote.isVisibleIn(workspace) && savedNote.matches(searchText)) {
+            withoutSaved + savedNote
+        } else {
+            withoutSaved
+        }
+        return nextNotes.sortedWith(compareBy<LocketNote> { it.sortOrder }.thenByDescending { it.updatedAt })
+    }
+
+    private fun LocketNote.isVisibleIn(workspace: Workspace): Boolean =
+        when (workspace) {
+            Workspace.Notes -> !isArchived
+            Workspace.Archive -> isArchived
+        }
+
+    private fun LocketNote.matches(searchText: String): Boolean {
+        val query = searchText.trim()
+        return query.isEmpty() ||
+            title.contains(query, ignoreCase = true) ||
+            body.contains(query, ignoreCase = true) ||
+            labels.any { it.name.contains(query, ignoreCase = true) } ||
+            checklistItems.any { it.content.contains(query, ignoreCase = true) }
     }
 }

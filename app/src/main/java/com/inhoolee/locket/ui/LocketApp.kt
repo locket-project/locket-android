@@ -15,34 +15,42 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun LocketApp(viewModel: LocketViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val editorDraft = state.editorDraft
-    Surface(modifier = Modifier.fillMaxSize()) {
-        when {
-            !state.isConfigured -> CenterMessage(state.errorMessage ?: "Supabase is not configured.")
-            state.isCheckingSession -> LoadingScreen()
-            !state.isSignedIn -> LoginScreen(
-                isLoading = state.isLoading,
-                errorMessage = state.errorMessage,
-                onSignIn = viewModel::signIn
-            )
-            editorDraft != null -> NoteEditorScreen(
-                draft = editorDraft,
-                isLoading = state.isLoading,
-                onDraftChange = viewModel::updateDraft,
-                onClose = viewModel::closeEditor,
-                onSave = viewModel::saveEditor
-            )
-            else -> NotesScreen(
-                state = state,
-                onRefresh = viewModel::refreshNotes,
-                onSearchChange = viewModel::setSearchText,
-                onWorkspaceChange = viewModel::setWorkspace,
-                onNewNote = viewModel::openNewNote,
-                onEditNote = viewModel::openEditor,
-                onDeleteNote = viewModel::deleteNote,
-                onTogglePin = viewModel::togglePin,
-                onToggleArchive = viewModel::toggleArchive,
-                onSignOut = viewModel::signOut
-            )
+    LocketTheme(themeMode = state.themeMode) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            when {
+                !state.isConfigured -> CenterMessage(state.errorMessage ?: "Supabase is not configured.")
+                state.isCheckingSession -> LoadingScreen()
+                !state.isSignedIn -> LoginScreen(
+                    themeMode = state.themeMode,
+                    isLoading = state.isLoading,
+                    errorMessage = state.errorMessage,
+                    onThemeModeChange = viewModel::setThemeMode,
+                    onSignIn = viewModel::signIn
+                )
+                editorDraft != null -> NoteEditorScreen(
+                    themeMode = state.themeMode,
+                    draft = editorDraft,
+                    isLoading = state.isLoading,
+                    onThemeModeChange = viewModel::setThemeMode,
+                    onDraftChange = viewModel::updateDraft,
+                    onClose = viewModel::closeEditor,
+                    onSave = viewModel::saveEditor
+                )
+                else -> NotesScreen(
+                    themeMode = state.themeMode,
+                    state = state,
+                    onThemeModeChange = viewModel::setThemeMode,
+                    onRefresh = viewModel::refreshNotes,
+                    onSearchChange = viewModel::setSearchText,
+                    onWorkspaceChange = viewModel::setWorkspace,
+                    onNewNote = viewModel::openNewNote,
+                    onEditNote = viewModel::openEditor,
+                    onDeleteNote = viewModel::deleteNote,
+                    onTogglePin = viewModel::togglePin,
+                    onToggleArchive = viewModel::toggleArchive,
+                    onSignOut = viewModel::signOut
+                )
+            }
         }
     }
 }

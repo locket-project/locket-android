@@ -18,20 +18,18 @@ class PayloadsTest {
     @Test
     fun noteInsertPayloadMatchesSupabaseColumns() {
         val payload = noteInsertPayload(
-            id = "note-1",
             userId = "user-1",
             draft = draft(),
-            sortOrder = -100.0
+            sortOrder = -100L
         )
 
-        assertEquals("note-1", payload["id"])
         assertEquals("user-1", payload["user_id"])
         assertEquals("Title", payload["title"])
         assertEquals("Body", payload["body"])
         assertEquals("text", payload["type"])
         assertEquals("yellow", payload["color"])
         assertEquals(false, payload["is_pinned"])
-        assertEquals(-100.0, payload["sort_order"])
+        assertEquals(-100L, payload["sort_order"])
     }
 
     @Test
@@ -53,14 +51,12 @@ class PayloadsTest {
     @Test
     fun checklistInsertPayloadClampsIndentAndSetsCheckedAt() {
         val payload = checklistInsertPayload(
-            id = "item-1",
             noteId = "note-1",
             userId = "user-1",
             item = ChecklistDraftPayload(content = "Task", isChecked = true, indentLevel = 99),
             sortOrder = 3
         )
 
-        assertEquals("item-1", payload["id"])
         assertEquals("note-1", payload["note_id"])
         assertEquals("user-1", payload["user_id"])
         assertEquals("Task", payload["content"])
