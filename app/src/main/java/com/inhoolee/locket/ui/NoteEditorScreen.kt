@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -29,13 +32,20 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.inhoolee.locket.domain.NoteColor
 import com.inhoolee.locket.domain.NoteKind
+import kotlinx.coroutines.delay
 
 @Composable
 fun NoteEditorScreen(
@@ -49,11 +59,13 @@ fun NoteEditorScreen(
             onFinish()
         }
     }
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .verticalScroll(scrollState)
             .padding(start = 16.dp, top = 28.dp, end = 16.dp, bottom = 16.dp)
     ) {
         Row(
@@ -78,7 +90,9 @@ fun NoteEditorScreen(
             onValueChange = { onDraftChange(draft.copy(title = it)) },
             label = { Text("Title") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .keepFocusedInputVisible(draft.title)
         )
         Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -105,7 +119,9 @@ fun NoteEditorScreen(
                 onValueChange = { onDraftChange(draft.copy(body = it)) },
                 label = { Text("Body") },
                 minLines = 8,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .keepFocusedInputVisible(draft.body)
             )
         } else {
             ChecklistEditor(
@@ -119,9 +135,36 @@ fun NoteEditorScreen(
             onValueChange = { onDraftChange(draft.copy(labelsCsv = it)) },
             label = { Text("Labels, comma separated") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .keepFocusedInputVisible(draft.labelsCsv)
         )
     }
+}
+
+@Composable
+private fun Modifier.keepFocusedInputVisible(trigger: Any?): Modifier {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    var isFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            delay(280)
+            bringIntoViewRequester.bringIntoView()
+        }
+    }
+
+    LaunchedEffect(isFocused, trigger) {
+        if (isFocused) {
+            delay(80)
+            bringIntoViewRequester.bringIntoView()
+        }
+    }
+
+    return bringIntoViewRequester(bringIntoViewRequester)
+        .onFocusChanged { focusState ->
+            isFocused = focusState.isFocused || focusState.hasFocus
+        }
 }
 
 @Composable
@@ -180,7 +223,9 @@ private fun ChecklistEditor(
                     },
                     label = { Text("Item") },
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .keepFocusedInputVisible(item.content)
                 )
                 IconButton(onClick = { onItemsChange(items.filterIndexed { i, _ -> i != index }) }) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete item")
