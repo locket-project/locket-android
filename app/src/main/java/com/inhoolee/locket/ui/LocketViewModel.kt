@@ -31,6 +31,7 @@ data class LocketUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val editorDraft: EditorDraft? = null,
+    val originalEditorDraft: EditorDraft? = null,
     val themeMode: ThemeMode = ThemeMode.System
 )
 
@@ -156,33 +157,24 @@ class LocketViewModel(
     }
 
     fun openNewNote(kind: NoteKind) {
+        val draft = EditorDraft(
+            kind = kind,
+            checklistItems = if (kind == NoteKind.Checklist) listOf(ChecklistEditorItem()) else emptyList()
+        )
         _uiState.update {
             it.copy(
-                editorDraft = EditorDraft(
-                    kind = kind,
-                    checklistItems = if (kind == NoteKind.Checklist) listOf(ChecklistEditorItem()) else emptyList()
-                )
+                editorDraft = draft,
+                originalEditorDraft = null
             )
         }
     }
 
     fun openEditor(note: LocketNote) {
+        val draft = note.toEditorDraft()
         _uiState.update {
             it.copy(
-                editorDraft = EditorDraft(
-                    noteId = note.id,
-                    title = note.title,
-                    body = note.body,
-                    kind = note.kind,
-                    color = note.color,
-                    labelsCsv = note.labels.joinToString(", ") { label -> label.name },
-                    checklistItems = note.checklistItems.map { item ->
-                        val draft = item.toDraftPayload()
-                        ChecklistEditorItem(id = draft.id, content = draft.content, isChecked = draft.isChecked)
-                    }.ifEmpty {
-                        if (note.kind == NoteKind.Checklist) listOf(ChecklistEditorItem()) else emptyList()
-                    }
-                )
+                editorDraft = draft,
+                originalEditorDraft = draft
             )
         }
     }
@@ -192,13 +184,17 @@ class LocketViewModel(
     }
 
     fun closeEditor() {
-        _uiState.update { it.copy(editorDraft = null) }
+        _uiState.update { it.copy(editorDraft = null, originalEditorDraft = null) }
     }
 
     fun finishEditor() {
         val state = _uiState.value
         if (state.isLoading) return
         val draft = state.editorDraft ?: return
+        if (draft == state.originalEditorDraft) {
+            closeEditor()
+            return
+        }
         if (!draft.hasContent()) {
             closeEditor()
             return
@@ -211,6 +207,7 @@ class LocketViewModel(
                     it.copy(
                         notes = it.notes.withSavedNote(savedNote, it.workspace, it.searchText),
                         editorDraft = null,
+                        originalEditorDraft = null,
                         errorMessage = null
                     )
                 }
@@ -293,6 +290,22 @@ class LocketViewModel(
         val notes = notesRepository.listNotes(state.workspace, state.searchText)
         _uiState.update { it.copy(notes = notes, errorMessage = null) }
     }
+
+    private fun LocketNote.toEditorDraft(): EditorDraft =
+        EditorDraft(
+            noteId = id,
+            title = title,
+            body = body,
+            kind = kind,
+            color = color,
+            labelsCsv = labels.joinToString(", ") { label -> label.name },
+            checklistItems = checklistItems.map { item ->
+                val draft = item.toDraftPayload()
+                ChecklistEditorItem(id = draft.id, content = draft.content, isChecked = draft.isChecked)
+            }.ifEmpty {
+                if (kind == NoteKind.Checklist) listOf(ChecklistEditorItem()) else emptyList()
+            }
+        )
 
     private fun List<LocketNote>.withSavedNote(
         savedNote: LocketNote,
