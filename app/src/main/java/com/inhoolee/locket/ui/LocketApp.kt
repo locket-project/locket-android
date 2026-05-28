@@ -28,13 +28,10 @@ fun LocketApp(viewModel: LocketViewModel) {
                     onSignIn = viewModel::signIn
                 )
                 editorDraft != null -> NoteEditorScreen(
-                    themeMode = state.themeMode,
                     draft = editorDraft,
                     isLoading = state.isLoading,
-                    onThemeModeChange = viewModel::setThemeMode,
                     onDraftChange = viewModel::updateDraft,
-                    onClose = viewModel::closeEditor,
-                    onSave = viewModel::saveEditor
+                    onFinish = viewModel::finishEditor
                 )
                 else -> NotesScreen(
                     themeMode = state.themeMode,

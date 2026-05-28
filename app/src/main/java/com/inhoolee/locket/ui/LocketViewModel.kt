@@ -43,6 +43,13 @@ data class EditorDraft(
     val labelsCsv: String = "",
     val checklistItems: List<ChecklistEditorItem> = emptyList()
 ) {
+    fun hasContent(): Boolean =
+        title.isNotBlank() ||
+            when (kind) {
+                NoteKind.Text -> body.isNotBlank()
+                NoteKind.Checklist -> checklistItems.any { it.content.isNotBlank() }
+            }
+
     fun toPayload(): NoteDraftPayload =
         NoteDraftPayload(
             title = title.trim(),
@@ -188,8 +195,15 @@ class LocketViewModel(
         _uiState.update { it.copy(editorDraft = null) }
     }
 
-    fun saveEditor() {
-        val draft = _uiState.value.editorDraft ?: return
+    fun finishEditor() {
+        val state = _uiState.value
+        if (state.isLoading) return
+        val draft = state.editorDraft ?: return
+        if (!draft.hasContent()) {
+            closeEditor()
+            return
+        }
+
         viewModelScope.launch {
             runLoading {
                 val savedNote = notesRepository.saveNote(draft.noteId, draft.toPayload())

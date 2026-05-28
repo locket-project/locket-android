@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,17 +35,13 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.inhoolee.locket.domain.NoteColor
 import com.inhoolee.locket.domain.NoteKind
-import com.inhoolee.locket.domain.ThemeMode
 
 @Composable
 fun NoteEditorScreen(
-    themeMode: ThemeMode,
     draft: EditorDraft,
     isLoading: Boolean,
-    onThemeModeChange: (ThemeMode) -> Unit,
     onDraftChange: (EditorDraft) -> Unit,
-    onClose: () -> Unit,
-    onSave: () -> Unit
+    onFinish: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -52,18 +49,20 @@ fun NoteEditorScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (draft.noteId == null) "New note" else "Edit note",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.headlineSmall
-            )
-            ThemeModeSelector(
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange
-            )
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onFinish, enabled = !isLoading) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -115,14 +114,6 @@ fun NoteEditorScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(modifier = Modifier.height(20.dp))
-        Button(
-            onClick = onSave,
-            enabled = !isLoading,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (isLoading) "Saving" else "Save")
-        }
     }
 }
 
