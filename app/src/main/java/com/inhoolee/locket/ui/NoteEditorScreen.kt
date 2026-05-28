@@ -1,5 +1,6 @@
 package com.inhoolee.locket.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,12 @@ fun NoteEditorScreen(
     onDraftChange: (EditorDraft) -> Unit,
     onFinish: () -> Unit
 ) {
+    BackHandler {
+        if (!isLoading) {
+            onFinish()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

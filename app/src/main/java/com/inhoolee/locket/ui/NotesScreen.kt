@@ -78,7 +78,6 @@ fun NotesScreen(
     var isSearchOpen by rememberSaveable { mutableStateOf(state.searchText.isNotEmpty()) }
     var isWorkspaceMenuOpen by rememberSaveable { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
-    val workspaceTitle = if (state.workspace == Workspace.Archive) "Archive" else "Notes"
 
     LaunchedEffect(isSearchOpen) {
         if (isSearchOpen) {
@@ -109,7 +108,9 @@ fun NotesScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(workspaceTitle, style = MaterialTheme.typography.headlineMedium)
+                    if (state.workspace == Workspace.Archive) {
+                        Text("Archive", style = MaterialTheme.typography.headlineMedium)
+                    }
                     Text(state.userEmail, style = MaterialTheme.typography.bodySmall)
                 }
                 ThemeModeSelector(
